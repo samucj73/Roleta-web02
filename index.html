@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Previsor de Roleta - 100% Web</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.3/dist/tesseract.min.js"></script>
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: auto; padding: 20px; }
+        h1 { color: #333; }
+        input[type="file"] { margin-top: 10px; }
+        #output, #resultados { margin-top: 20px; }
+        img { max-width: 100%; margin-top: 10px; }
+        .loading { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Previsor de Números da Roleta</h1>
+    <p>Envie uma imagem com números (JPEG):</p>
+    <input type="file" accept="image/*" onchange="handleFile(this)">
+    <div id="output"></div>
+    <div id="resultados"></div>
+
+    <script>
+        function handleFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = document.createElement("img");
+                img.src = e.target.result;
+                document.getElementById("output").innerHTML = '<p class="loading">Lendo imagem e extraindo números...</p>';
+                document.getElementById("output").appendChild(img);
+
+                Tesseract.recognize(
+                    e.target.result,
+                    'eng',
+                    { logger: m => console.log(m) }
+                ).then(({ data: { text } }) => {
+                    const numeros = Array.from(text.matchAll(/\d+/g)).map(n => parseInt(n[0]));
+                    document.getElementById("output").innerHTML = "<p><strong>Números extraídos:</strong><br>" + numeros.join(", ") + "</p>";
+                    mostrarPrevisoes(numeros);
+                });
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function mostrarPrevisoes(numeros) {
+            const contagem = {};
+            numeros.forEach(n => contagem[n] = (contagem[n] || 0) + 1);
+            const previsoes = Object.entries(contagem)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(entry => entry[0]);
+            
+            document.getElementById("resultados").innerHTML =
+                "<h3>Top 10 Números Prováveis:</h3><p>" + previsoes.join(", ") + "</p>";
+        }
+    </script>
+</body>
+</html>

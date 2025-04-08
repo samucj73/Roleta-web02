@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Previsor de Números da Roleta</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.3/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      max-width: 800px;
+      margin: auto;
+      padding: 20px;
+      background: #f4f6f9;
+    }
+    h1, h2 {
+      text-align: center;
+      color: #2c3e50;
+    }
+    .hidden { display: none; }
+    #analisarBtn, #resetBtn, #baixarPdfBtn {
+      margin: 10px 5px;
+      padding: 10px 20px;
+      border: none;
+      background: #2980b9;
+      color: white;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    canvas { margin-top: 20px; }
+    .box {
+      background: white;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Previsor de Números da Roleta</h1>
+  <input type="file" accept="image/*" onchange="handleFile(this)">
+  <button id="resetBtn" onclick="resetar()">Resetar</button>
+
+  <div id="analise" class="hidden">
+    <div class="box" id="analiseTexto"></div>
+    <canvas id="graficoFrequencia"></canvas>
+    <canvas id="graficoFaixa"></canvas>
+    <canvas id="graficoParesImpares"></canvas>
+    <button id="baixarPdfBtn" onclick="gerarPDF()">Baixar PDF com Análises</button>
+  </div>
+
+  <script>
+    let numerosExtraidos = [];
+
+    function handleFile(input) {
+      const file = input.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        Tesseract.recognize(
+          e.target.result,
+          'eng',
+          { logger: m => console.log(m) }
+        ).then(({ data: { text } }) => {
+          const numeros = Array.from(text.matchAll(/\d+/g)).map(n => parseInt(n[0]));
+          numerosExtraidos = numeros;
+          processarAnalise(numeros);
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function processarAnalise(numeros) {
+      document.getElementById("analise").classList.remove("hidden");
+
+      const contagem = {};
+      numeros.forEach(n => contagem[n] = (contagem[n] || 0) + 1);
+
+      const total = numeros.length;
+      const pares = numeros.filter(n => n % 2 === 0).length;
+      const impares = total - pares;
+
+      const media = (numeros.reduce((a, b) => a + b, 0) / total).toFixed(2);
+      const moda = Object.entries(contagem).reduce((a, b) => a[1] > b[1] ? a : b)[0];
+      const ordenados = [...numeros].sort((a, b) => a - b);
+      const mediana = ordenados[Math.floor(total / 2)];
+      const desvioPadrao = Math.sqrt(numeros.map(n => Math.pow(n - media, 2)).reduce((a, b) => a + b, 0) / total).toFixed(2);
+
+      const faixas = { '0-12': 0, '13-24': 0, '25-36': 0 };
+      numeros.forEach(n => {
+        if (n <= 12) faixas['0-12']++;
+        else if (n <= 24) faixas['13-24']++;
+        else faixas['25-36']++;
+      });
+
+      const top10 = Object.entries(contagem)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(e => e[0]);
+
+      const coldNumbers = Object.entries(contagem)
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, 5)
+        .map(e => e[0]);
+
+      // HTML
+      document.getElementById("analiseTexto").innerHTML = `
+        <h2>Resumo das Análises</h2>
+        <p><strong>Total de Números:</strong> ${total}</p>
+        <p><strong>Média:</strong> ${media} | <strong>Mediana:</strong> ${mediana} | <strong>Moda:</strong> ${moda}</p>
+        <p><strong>Desvio Padrão:</strong> ${desvioPadrao}</p>
+        <p><strong>Pares:</strong> ${pares} | <strong>Ímpares:</strong> ${impares}</p>
+        <p><strong>Top 10 mais frequentes:</strong> ${top10.join(", ")}</p>
+        <p><strong>Cold numbers:</strong> ${coldNumbers.join(", ")}</p>
+      `;
+
+      desenharGrafico("graficoFrequencia", "Frequência dos Números", Object.keys(contagem), Object.values(contagem));
+      desenharGrafico("graficoFaixa", "Distribuição por Faixa", Object.keys(faixas), Object.values(faixas));
+      desenharGrafico("graficoParesImpares", "Pares vs Ímpares", ["Pares", "Ímpares"], [pares, impares]);
+    }
+
+    function desenharGrafico(id, titulo, labels, data) {
+      const ctx = document.getElementById(id).getContext("2d");
+      new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: titulo, data, backgroundColor: '#3498db' }] },
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function gerarPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      doc.setFontSize(18);
+      doc.text("Relatório de Análise da Roleta", 20, 20);
+      doc.setFontSize(12);
+      doc.text(document.getElementById("analiseTexto").innerText, 20, 40);
+      doc.save("analise_roleta.pdf");
+    }
+
+    function resetar() {
+      numerosExtraidos = [];
+      document.getElementById("analise").classList.add("hidden");
+      document.getElementById("analiseTexto").innerHTML = "";
+    }
+  </script>
+
+</body>
+</html>

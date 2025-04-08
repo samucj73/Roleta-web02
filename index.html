@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Previsor de Roleta com IA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.3/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0/dist/tf.min.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+    .container { max-width: 960px; margin: auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #007bff; }
+    input[type="file"] { display: block; margin: 20px auto; padding: 10px; border: 1px solid #ced4da; border-radius: 5px; }
+    button { display: block; margin: 20px auto; padding: 12px 24px; font-size: 16px; background: #007bff; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    canvas { margin-top: 20px; }
+    .section { margin-top: 30px; }
+    .loading { text-align: center; color: green; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container" id="relatorio">
+    <h1>Previsor de Números da Roleta com IA</h1>
+    <input type="file" accept="image/*" onchange="handleFile(this)">
+    <div id="output" class="section"></div>
+    <div id="analises" class="section"></div>
+    <div class="section">
+      <canvas id="graficoFrequencia"></canvas>
+      <canvas id="graficoParImpar"></canvas>
+      <canvas id="graficoZonas"></canvas>
+    </div>
+    <div class="section" id="padroes"></div>
+    <div class="section" id="ia-previsao"></div>
+  </div>
+  <button onclick="gerarPDF()">Baixar Relatório em PDF</button>
+
+<script>
+function handleFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById("output").innerHTML = '<p class="loading">Analisando imagem com IA...</p>';
+    Tesseract.recognize(
+      e.target.result,
+      'eng',
+      { logger: m => console.log(m) }
+    ).then(({ data: { text } }) => {
+      const numeros = Array.from(text.matchAll(/\\d+/g)).map(n => parseInt(n[0]));
+      mostrarAnalises(numeros);
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function mostrarAnalises(numeros) {
+  if (numeros.length === 0) {
+    document.getElementById("output").innerHTML = "<p style='color:red'>Nenhum número identificado.</p>";
+    return;
+  }
+
+  document.getElementById("output").innerHTML = "<p class='loading'>Analisando números...</p>";
+  const contagem = {};
+  numeros.forEach(n => contagem[n] = (contagem[n] || 0) + 1);
+  const top10 = Object.entries(contagem).sort((a,b) => b[1] - a[1]).slice(0, 10).map(e => e[0]);
+
+  const pares = numeros.filter(n => n % 2 === 0).length;
+  const impares = numeros.length - pares;
+  const zonas = { baixa: 0, media: 0, alta: 0 };
+  numeros.forEach(n => {
+    if (n <= 12) zonas.baixa++;
+    else if (n <= 24) zonas.media++;
+    else zonas.alta++;
+  });
+
+  document.getElementById("analises").innerHTML = `
+    <h3>Top 10 Números Frequentes</h3>
+    <p>${top10.join(", ")}</p>
+  `;
+
+  new Chart(document.getElementById("graficoFrequencia").getContext("2d"), {
+    type: 'bar',
+    data: {
+      labels: Object.keys(contagem),
+      datasets: [{ label: 'Frequência', data: Object.values(contagem), backgroundColor: '#007bff' }]
+    }
+  });
+
+  new Chart(document.getElementById("graficoParImpar").getContext("2d"), {
+    type: 'pie',
+    data: {
+      labels: ['Pares', 'Ímpares'],
+      datasets: [{ data: [pares, impares], backgroundColor: ['#28a745', '#dc3545'] }]
+    }
+  });
+
+  new Chart(document.getElementById("graficoZonas").getContext("2d"), {
+    type: 'doughnut',
+    data: {
+      labels: ['1-12', '13-24', '25-36'],
+      datasets: [{ data: [zonas.baixa, zonas.media, zonas.alta], backgroundColor: ['#ffc107', '#17a2b8', '#6f42c1'] }]
+    }
+  });
+
+  const padrao = detectarPadroes(numeros);
+  document.getElementById("padroes").innerHTML = `<h3>Padrões Detectados</h3><p>${padrao}</p>`;
+
+  const previsao = preverIA(numeros);
+  document.getElementById("ia-previsao").innerHTML = `<h3>Previsão por IA</h3><p><strong>Próximos 10 números:</strong> ${previsao.join(", ")}</p>`;
+}
+
+function detectarPadroes(numeros) {
+  let repetidos = numeros.filter((v, i, a) => a.indexOf(v) !== i);
+  let crescentes = numeros.slice().sort((a,b)=>a-b);
+  return `Repetidos: ${[...new Set(repetidos)].join(", ")} | Ordem crescente: ${crescentes.join(", ")}`;
+}
+
+function preverIA(numeros) {
+  const freq = {};
+  numeros.forEach(n => freq[n] = (freq[n] || 0) + 1);
+  return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 10).map(e => e[0]);
+}
+
+function gerarPDF() {
+  const relatorio = document.getElementById("relatorio");
+  html2pdf().set({
+    margin: 1,
+    filename: "relatorio_roleta.pdf",
+    image: { type: "jpeg", quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: "in", format: "a4", orientation: "portrait" }
+  }).from(relatorio).save();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Previsor de Números da Roleta</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.3/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f3f4f6;
+      color: #333;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    .container {
+      max-width: 850px;
+      margin: auto;
+      padding: 30px;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      margin-top: 30px;
+    }
+
+    h1, h2 {
+      color: #2c3e50;
+      text-align: center;
+    }
+
+    button {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      margin: 15px auto;
+      display: block;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    input[type="file"] {
+      display: block;
+      margin: 15px auto;
+    }
+
+    section {
+      margin-top: 30px;
+    }
+
+    canvas {
+      max-width: 100%;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body {
+        background: #121212;
+        color: #eee;
+      }
+      .container {
+        background: #1e1e1e;
+        box-shadow: 0 0 20px rgba(255,255,255,0.05);
+      }
+      h1, h2 {
+        color: #f1f1f1;
+      }
+      button {
+        background-color: #26a69a;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="appContainer">
+    <h1>Previsor de Números da Roleta</h1>
+
+    <section>
+      <h2>Etapa 1: Envie a Imagem</h2>
+      <input type="file" accept="image/*" onchange="handleFile(this)">
+    </section>
+
+    <section id="analiseNumeros"></section>
+    <section id="graficos"></section>
+    <section id="previsoesIA"></section>
+
+    <section>
+      <h2>Etapa 5: Exportar PDF</h2>
+      <button onclick="gerarPDF()">Baixar PDF com Análises</button>
+      <button onclick="resetarApp()">Resetar Análise</button>
+    </section>
+  </div>
+
+  <script>
+    let numerosExtraidos = [];
+
+    function handleFile(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        Tesseract.recognize(
+          e.target.result,
+          'eng',
+          { logger: m => console.log(m) }
+        ).then(({ data: { text } }) => {
+          numerosExtraidos = Array.from(text.matchAll(/\d+/g)).map(n => parseInt(n[0]));
+          exibirAnalise(numerosExtraidos);
+          exibirGraficos(numerosExtraidos);
+          rodarIA(numerosExtraidos);
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function exibirAnalise(nums) {
+      if (nums.length === 0) return;
+
+      const freq = {};
+      nums.forEach(n => freq[n] = (freq[n] || 0) + 1);
+
+      const media = (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2);
+      const moda = Object.entries(freq).reduce((a, b) => a[1] > b[1] ? a : b)[0];
+      const sorted = [...nums].sort((a, b) => a - b);
+      const mediana = sorted.length % 2 === 0 ?
+        ((sorted[sorted.length/2 - 1] + sorted[sorted.length/2]) / 2).toFixed(2) :
+        sorted[Math.floor(sorted.length/2)];
+
+      document.getElementById("analiseNumeros").innerHTML = `
+        <h2>Análise Estatística</h2>
+        <p><strong>Números lidos:</strong> ${nums.join(", ")}</p>
+        <p><strong>Total:</strong> ${nums.length}</p>
+        <p><strong>Média:</strong> ${media}</p>
+        <p><strong>Mediana:</strong> ${mediana}</p>
+        <p><strong>Moda:</strong> ${moda}</p>
+      `;
+    }
+
+    function exibirGraficos(nums) {
+      const freq = {};
+      nums.forEach(n => freq[n] = (freq[n] || 0) + 1);
+      const labels = Object.keys(freq);
+      const valores = Object.values(freq);
+
+      document.getElementById("graficos").innerHTML = `
+        <h2>Frequência dos Números</h2>
+        <canvas id="graficoFreq"></canvas>
+      `;
+
+      new Chart(document.getElementById("graficoFreq"), {
+        type: "bar",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Ocorrências",
+            backgroundColor: "#4CAF50",
+            data: valores
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
+    }
+
+    async function rodarIA(nums) {
+      if (nums.length < 10) {
+        document.getElementById("previsoesIA").innerHTML = "<p>Insira pelo menos 10 números para prever.</p>";
+        return;
+      }
+
+      const xs = [];
+      const ys = [];
+      for (let i = 0; i < nums.length - 1; i++) {
+        xs.push([nums[i]]);
+        ys.push(nums[i + 1]);
+      }
+
+      const model = tf.sequential();
+      model.add(tf.layers.lstm({ units: 32, returnSequences: false, inputShape: [1, 1] }));
+      model.add(tf.layers.dense({ units: 1 }));
+      model.compile({ loss: 'meanSquaredError', optimizer: 'adam' });
+
+      const inputTensor = tf.tensor(xs).reshape([xs.length, 1, 1]);
+      const outputTensor = tf.tensor(ys).reshape([ys.length, 1]);
+
+      await model.fit(inputTensor, outputTensor, { epochs: 100, verbose: 0 });
+
+      let ultimaEntrada = tf.tensor([nums[nums.length - 1]]).reshape([1, 1, 1]);
+      const previsoes = [];
+
+      for (let i = 0; i < 10; i++) {
+        let pred = model.predict(ultimaEntrada);
+        let prox = Math.round(pred.dataSync()[0]);
+        previsoes.push(prox);
+        ultimaEntrada = tf.tensor([prox]).reshape([1, 1, 1]);
+      }
+
+      document.getElementById("previsoesIA").innerHTML = `
+        <h2>Previsão com IA (LSTM)</h2>
+        <p><strong>Próximos 10 números prováveis:</strong> ${previsoes.join(", ")}</p>
+      `;
+    }
+
+    async function gerarPDF() {
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const container = document.getElementById("appContainer");
+
+      window.scrollTo(0, 0);
+      await html2canvas(container, { scale: 2, useCORS: true }).then(canvas => {
+        const imgData = canvas.toDataURL('image/png');
+        const imgProps = pdf.getImageProperties(imgData);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save("relatorio_roleta.pdf");
+      });
+    }
+
+    function resetarApp() {
+      location.reload();
+    }
+  </script>
+</body>
+</html>

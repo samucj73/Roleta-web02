@@ -2,17 +2,18 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Previsor de Roleta - Análise Avançada</title>
+  <title>Previsor de Roleta - Padrões e Análise Avançada</title>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.3/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial; max-width: 800px; margin: auto; padding: 20px; }
+    body { font-family: Arial; max-width: 900px; margin: auto; padding: 20px; }
     h1 { color: #333; }
     input[type="file"] { margin-top: 10px; }
-    #output, #resultados { margin-top: 20px; }
+    #output, #resultados, #padroes { margin-top: 20px; }
     canvas { margin-top: 20px; }
     img { max-width: 100%; margin-top: 10px; }
     .loading { color: green; font-weight: bold; }
+    ul { margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -21,6 +22,7 @@
   <input type="file" accept="image/*" onchange="handleFile(this)">
   <div id="output"></div>
   <div id="resultados"></div>
+  <div id="padroes"></div>
   <canvas id="graficoFrequencia"></canvas>
   <canvas id="graficoParImpar"></canvas>
   <canvas id="graficoZonas"></canvas>
@@ -43,7 +45,7 @@
           { logger: m => console.log(m) }
         ).then(({ data: { text } }) => {
           const numeros = Array.from(text.matchAll(/\d+/g)).map(n => parseInt(n[0]))
-            .filter(n => n >= 0 && n <= 36);  // somente números válidos de roleta
+            .filter(n => n >= 0 && n <= 36);
 
           document.getElementById("output").innerHTML =
             "<p><strong>Números extraídos:</strong><br>" + numeros.join(", ") + "</p>";
@@ -61,7 +63,7 @@
       }
 
       const contagem = {};
-      const zonas = [0, 0, 0]; // zona 1, 2, 3
+      const zonas = [0, 0, 0];
       let pares = 0, impares = 0;
 
       numeros.forEach(n => {
@@ -80,6 +82,46 @@
         <p><strong>Quantidade total de números analisados:</strong> ${numeros.length}</p>
       `;
 
+      // Padrões
+      let padroesHtml = "<h3>Padrões Numéricos Detectados:</h3><ul>";
+
+      const repeticoes = Object.entries(contagem).filter(([n, c]) => c >= 3);
+      if (repeticoes.length) {
+        padroesHtml += "<li><strong>Repetições:</strong> " + repeticoes.map(([n]) => n).join(", ") + "</li>";
+      }
+
+      const saltos = [];
+      for (let i = 1; i < numeros.length - 1; i++) {
+        const diff1 = numeros[i] - numeros[i - 1];
+        const diff2 = numeros[i + 1] - numeros[i];
+        if (diff1 === diff2 && Math.abs(diff1) <= 12) {
+          saltos.push(`Sequência: ${numeros[i - 1]}, ${numeros[i]}, ${numeros[i + 1]} (salto de ${diff1})`);
+        }
+      }
+      if (saltos.length) {
+        padroesHtml += "<li><strong>Saltos Fixos:</strong><br>" + saltos.join("<br>") + "</li>";
+      }
+
+      const medias = [];
+      for (let i = 0; i < numeros.length - 4; i++) {
+        const grupo = numeros.slice(i, i + 5);
+        const media = grupo.reduce((a, b) => a + b, 0) / 5;
+        medias.push(media.toFixed(2));
+      }
+      padroesHtml += "<li><strong>Médias móveis (a cada 5 números):</strong> " + medias.join(", ") + "</li>";
+
+      const finais = {};
+      numeros.forEach(n => {
+        const fim = n % 10;
+        finais[fim] = (finais[fim] || 0) + 1;
+      });
+      const topFinais = Object.entries(finais).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      padroesHtml += "<li><strong>Terminações mais comuns:</strong> " + topFinais.map(e => e[0]).join(", ") + "</li>";
+
+      padroesHtml += "</ul>";
+      document.getElementById("padroes").innerHTML = padroesHtml;
+
+      // Gráficos
       const labels = Array.from({ length: 37 }, (_, i) => i);
       const dataFreq = labels.map(n => contagem[n] || 0);
 

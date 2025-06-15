@@ -50,21 +50,53 @@ def tem_qtd_primos_aceitavel(jogo):
 def evitar_bolas_1_15(jogo):
     return not ({1, 2, 3} <= set(jogo) or {22, 23, 24} <= set(jogo))
 
+def evitar_sequencias_longas(jogo, limite=4):
+    count = 1
+    for i in range(1, len(jogo)):
+        if jogo[i] == jogo[i-1] + 1:
+            count += 1
+            if count > limite:
+                return False
+        else:
+            count = 1
+    return True
+
+def distribuicao_em_linhas_colunas(jogo):
+    linhas = set((n - 1) // 5 for n in jogo)
+    colunas = set((n - 1) % 5 for n in jogo)
+    return len(linhas) >= 4 and len(colunas) >= 4
+
+def evitar_grupos_completos(jogo):
+    linhas = [(1,2,3,4,5), (6,7,8,9,10), (11,12,13,14,15), (16,17,18,19,20), (21,22,23,24,25)]
+    colunas = [(1,6,11,16,21), (2,7,12,17,22), (3,8,13,18,23), (4,9,14,19,24), (5,10,15,20,25)]
+    for grupo in linhas + colunas:
+        if all(n in jogo for n in grupo):
+            return False
+    return True
+
+def usar_dezenas_repetidas(jogo, ultimo_resultado, min_rept=6, max_rept=10):
+    qtd = len(set(jogo) & set(ultimo_resultado))
+    return min_rept <= qtd <= max_rept
+
 def gerar_jogo_base(mais, menos, qtd_numeros):
     base_pool = list(set(mais + menos))
     if len(base_pool) < qtd_numeros:
         base_pool = list(set(range(1, 26)))
     return sorted(random.sample(base_pool, qtd_numeros))
 
-def gerar_jogos_filtrados(mais, menos, qtd_jogos=5, qtd_numeros=15):
+def gerar_jogos_filtrados(mais, menos, qtd_jogos, qtd_numeros, ultimo_resultado, filtros):
     jogos = []
     tentativas = 0
     while len(jogos) < qtd_jogos and tentativas < 10000:
         jogo = gerar_jogo_base(mais, menos, qtd_numeros)
         if (
-            tem_equilibrio_par_impar(jogo) and
-            tem_qtd_primos_aceitavel(jogo) and
-            evitar_bolas_1_15(jogo)
+            (not filtros["pares_impares"] or tem_equilibrio_par_impar(jogo)) and
+            (not filtros["primos"] or tem_qtd_primos_aceitavel(jogo)) and
+            (not filtros["bolas_1_15"] or evitar_bolas_1_15(jogo)) and
+            (not filtros["sequencias"] or evitar_sequencias_longas(jogo)) and
+            (not filtros["distribuicao"] or distribuicao_em_linhas_colunas(jogo)) and
+            (not filtros["grupos_completos"] or evitar_grupos_completos(jogo)) and
+            (not filtros["repetidos"] or usar_dezenas_repetidas(jogo, ultimo_resultado))
         ):
             jogos.append(jogo)
         tentativas += 1
@@ -83,14 +115,25 @@ qtd_concursos = st.slider("📊 Quantos concursos deseja analisar?", 10, 250, 15
 qtd_jogos = st.slider("🎰 Quantos cartões deseja gerar?", 1, 50, 10)
 qtd_numeros = st.radio("🔢 Quantos números por cartão?", [15, 16, 18], index=0)
 
+st.markdown("### 🧠 Filtros Estratégicos")
+filtros = {
+    "pares_impares": st.checkbox("✅ Equilíbrio entre pares e ímpares", value=True),
+    "primos": st.checkbox("✅ Incluir ao menos 3 números primos", value=True),
+    "bolas_1_15": st.checkbox("✅ Evitar padrões nas bolas 1 e 15", value=True),
+    "sequencias": st.checkbox("✅ Evitar sequências longas (5+)", value=True),
+    "distribuicao": st.checkbox("✅ Distribuição equilibrada em linhas/colunas", value=True),
+    "grupos_completos": st.checkbox("✅ Evitar grupos completos (linhas/colunas)", value=True),
+    "repetidos": st.checkbox("✅ Incluir 6 a 10 números do último resultado", value=True),
+}
+
 if st.button("🎯 Gerar Jogos Estratégicos"):
     with st.spinner("Gerando jogos e consultando API..."):
         concursos = capturar_ultimos_resultados(qtd_concursos)
         if concursos:
             mais, menos = calcular_frequencia(concursos)
-            jogos = gerar_jogos_filtrados(mais, menos, qtd_jogos, qtd_numeros)
             ultimo_resultado = concursos[0][2]
             data_ultimo = concursos[0][1]
+            jogos = gerar_jogos_filtrados(mais, menos, qtd_jogos, qtd_numeros, ultimo_resultado, filtros)
             conferidos = conferir_jogos(jogos, ultimo_resultado)
 
             st.success(f"{len(jogos)} jogos gerados com base em {qtd_concursos} concursos anteriores.")
